@@ -1,0 +1,165 @@
+name: Rotate proxy tunnel
+
+# A cloudflared *quick* tunnel has no stable hostname: every start mints a fresh
+# `*.trycloudflare.com`, and the one before it is dead. So the box in CIS is
+# restarted on a schedule, the new address written into `.env`, and — because
+# `VITE_YM_PROXY` is inlined at build time, not read at runtime — the deploy
+# workflow is dispatched afterwards. An edit without a rebuild ships nothing.
+#
+# Midnight **Moscow** (21:00 UTC), the quietest hour for a CIS-only app; use
+# `0 0 * * *` for midnight UTC instead. GitHub runs scheduled workflows late
+# under load — sometimes by an hour — so treat the time as "overnight", not as
+# an appointment.
+on:
+  # schedule:
+  #   - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write # the commit
+  actions: write # dispatching the deploy
+
+# Never two rotations at once: the second would kill the tunnel the first is
+# still checking. Queue rather than cancel — a half-done rotation leaves the app
+# pointed at a hostname nothing is listening on.
+concurrency:
+  group: rotate-proxy
+  cancel-in-progress: false
+
+env:
+  SSH_HOST: ${{ secrets.VDSINA_HOST || '127.0.0.1' }}
+  SSH_USER: ${{ secrets.VDSINA_USER || 'root' }}
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Load the SSH key
+        env:
+          SSH_KEY: ${{ secrets.VDSINA_SSH_KEY }}
+        run: |
+          [ -n "$SSH_KEY" ] || { echo "::error::VDSINA_SSH_KEY is not set"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/vdsina.key
+          chmod 600 ~/.ssh/vdsina.key
+          ssh-keyscan -T 10 "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # `bash -s`, not the default shell: `disown` is a bash builtin. The
+      # redirects are what let ssh return — a background job still holding the
+      # session's stdin or stdout keeps the channel open and hangs the step.
+      - name: Restart the tunnel
+        run: |
+          ssh -i ~/.ssh/vdsina.key -o BatchMode=yes "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+          set -eu
+          cd "$HOME"
+
+          # -f, because the binary is invoked by path and `pkill cloudflared`
+          # would miss it. Non-zero when nothing matched, which is not an error.
+          pkill -f 'cloudflared tunnel' || true
+          sleep 2
+
+          # Truncated, so the URL read back is this run's and not the last one's.
+          : > cloudflared_socat.log
+          nohup ./ai-experiments/cloudflared tunnel --url http://localhost:1337 \
+            > cloudflared_socat.log 2>&1 < /dev/null &
+          disown
+          REMOTE
+
+      # Separate session so this step's stdout is the URL and nothing else.
+      # cloudflared prints it a good ten seconds after it starts.
+      - name: Read the tunnel address
+        id: tunnel
+        run: |
+          url=$(ssh -i ~/.ssh/vdsina.key -o BatchMode=yes "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+          set -eu
+          cd "$HOME"
+          for _ in $(seq 1 30); do
+            url=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' cloudflared_socat.log | head -n1 || true)
+            [ -n "$url" ] && { printf '%s\n' "$url"; exit 0; }
+            sleep 2
+          done
+          echo 'no trycloudflare URL in cloudflared_socat.log:' >&2
+          tail -n 40 cloudflared_socat.log >&2
+          exit 1
+          REMOTE
+          )
+          echo "Tunnel: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # A dead address committed and deployed is a broken app until someone
+      # notices, so it is proven to forward before anything is written. Any HTTP
+      # status means the tunnel and the proxy behind it both answered —
+      # `/account/status` without a token is a 4xx, which is a pass. Cloudflare
+      # serves 502/503/530 of its own while a fresh tunnel registers.
+      - name: Check the new address forwards
+        env:
+          URL: ${{ steps.tunnel.outputs.url }}
+        run: |
+          for attempt in $(seq 1 12); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+              "$URL/https://api.music.yandex.net/account/status" || true)
+            case "$code" in
+              ''|000|502|503|530) echo "attempt $attempt: $code"; sleep 5 ;;
+              *) echo "The proxy answered $code."; exit 0 ;;
+            esac
+          done
+          echo "::error::$URL never answered."
+          exit 1
+
+      - name: Commit the new address
+        id: commit
+        env:
+          URL: ${{ steps.tunnel.outputs.url }}
+        run: |
+          # `|` as the delimiter, since the replacement is a URL. The trailing
+          # slash matches what's committed; `withProxy` normalises it either way.
+          sed -i -E "s|^VITE_YM_PROXY=.*|VITE_YM_PROXY=$URL/|" .env
+          grep -qxF "VITE_YM_PROXY=$URL/" .env || { echo "::error::.env was not rewritten"; exit 1; }
+
+          if git diff --quiet -- .env; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "The tunnel came back on the same address; nothing to deploy."
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore: rotate VITE_YM_PROXY to $URL" -- .env
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # The push above raises no `push` event: GitHub deliberately fires no
+      # workflow for anything `GITHUB_TOKEN` did, so everything that ships on a
+      # push to master would sit there and the old address would stay live.
+      # `workflow_dispatch` is the documented exception to that rule, so each
+      # one is started by hand here.
+      #
+      # Every workflow rather than `vercel.yml` by name, so adding a workflow
+      # doesn't mean remembering this file. The price of not holding a PAT is
+      # that a workflow with no `workflow_dispatch:` trigger can't be started
+      # this way at all, and is skipped with a line in the log saying so.
+      - name: Trigger the other workflows
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "/repos/$GITHUB_REPOSITORY/actions/workflows" --paginate \
+            --jq '.workflows[] | select(.state == "active") | "\(.id) \(.path)"' |
+          while read -r id path; do
+            # Not this one: it would start a second rotation on top of this.
+            if [ "$path" = '.github/workflows/update-proxy.yml' ]; then continue; fi
+
+            if [ ! -f "$path" ] || ! grep -qE '^\s*workflow_dispatch:' "$path"; then
+              echo "Skipping $path — nothing to dispatch."
+              continue
+            fi
+
+            echo "Dispatching $path"
+            gh api --method POST \
+              "/repos/$GITHUB_REPOSITORY/actions/workflows/$id/dispatches" \
+              -f "ref=$GITHUB_REF_NAME"
+          done

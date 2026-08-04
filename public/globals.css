@@ -1,0 +1,38 @@
+/* Only the dark values live here: the surstromming packages bake the light ones
+   in as custom-property fallbacks, so light needs nothing written down. */
+[data-theme='dark'] {
+  --background: oklch(0.135 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.195 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.195 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.259 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+
+  /* Yandex Music's yellow, pulled down off pure chroma so it survives next to
+     white text; the same hue in both themes, re-lightened for the surface. */
+  --brand: oklch(0.855 0.165 92);
+  --brand-foreground: oklch(0.205 0 0);
+
+  /* Lifted the same way the brand is — a mid-lightness green or red reads as
+     muddy against the dark surface. */
+  --chart-up: oklch(0.72 0.18 148);
+  --chart-down: oklch(0.68 0.19 27);
+
+  --sidebar: oklch(0.16 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+}

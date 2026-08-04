@@ -1,0 +1,71 @@
+name: Vercel deploy
+
+# Every push to master ships. `workflow_dispatch` stays, for a redeploy with no
+# commit behind it — a rotated `VITE_YM_PROXY` needs a rebuild, not an edit.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check token
+        run: '[ -n "$VERCEL_TOKEN" ] || { echo "VERCEL_TOKEN is not set"; exit 1; }'
+
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Fetch project name from package.json
+        id: project_name
+        run: echo "PACKAGE_NAME=$(node -p "require('./package.json').name")" >> $GITHUB_OUTPUT
+
+      - name: Disable Vercel telemetry
+        run: npx vercel telemetry disable
+
+      - name: Link Vercel project
+        env:
+          PROJECT_NAME: ${{ steps.project_name.outputs.PACKAGE_NAME }}
+        run: |
+          npx vercel link --yes --project $PROJECT_NAME --token=$VERCEL_TOKEN
+          npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Install Node types
+        run: npm i --save-dev @types/node
+
+      - name: Write vercel.json
+        run: |
+          cat > vercel.json <<'JSON'
+          {
+            "$schema": "https://openapi.vercel.sh/vercel.json",
+            "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+          }
+          JSON
+
+      - name: Build
+        run: npx vercel build --prod --token=$VERCEL_TOKEN
+
+      - name: Deploy
+        run: |
+          echo "Deployment URL:" >> $GITHUB_STEP_SUMMARY
+          npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN >> $GITHUB_STEP_SUMMARY
+
+      - name: Remove other deployments
+        env:
+          PROJECT_NAME: ${{ steps.project_name.outputs.PACKAGE_NAME }}
+        run: npx vercel remove --safe --yes $PROJECT_NAME --token=$VERCEL_TOKEN || echo "Nothing to remove"

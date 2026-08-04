@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/globals.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- The dark background, because that's the side the theme opens on when the
+         OS has no opinion. `useTheme` rewrites it on every flip — the manifest's
+         own `theme_color` can't, so this is the one the running page goes by. -->
+    <meta name="theme-color" content="#080808" />
+
+    <!-- iOS has honoured the manifest's `display` since 16.4; the rest of the
+         home-screen app is still these. `black-translucent` is the only status
+         bar that suits both themes: the page runs under it and paints it
+         itself, which is what shell.scss's safe-area padding is for. The
+         manifest link is injected by vite-plugin-pwa. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="YMusic" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <title>YMusic</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

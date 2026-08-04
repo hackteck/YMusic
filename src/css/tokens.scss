@@ -1,0 +1,28 @@
+@use 'sass:map';
+
+// Tokens the design package doesn't own, in exactly its shape:
+// var(--name, <light fallback>), so a theme overrides them at runtime.
+// Read them as app.color(brand) alongside design.color(primary).
+$colors: (
+  brand: oklch(0.78 0.16 82),
+  brand-foreground: oklch(0.205 0 0),
+  // Chart movement. Named for what they mark, not borrowed from `destructive`
+  // — a track slipping a place is not an error.
+  chart-up: oklch(0.62 0.17 148),
+  chart-down: oklch(0.6 0.2 27),
+);
+
+@function color($name) {
+  @if not map.has-key($colors, $name) {
+    @error "Unknown app color token `#{$name}`, see $colors in tokens.scss";
+  }
+  @return var(--#{$name}, #{map.get($colors, $name)});
+}
+
+// Repaints a `primary` Button in the brand colour through the tokens its own
+// variant already reads — so hover, focus ring and dark rules keep working,
+// instead of an override war with the package's CSS.
+@mixin brand-button {
+  --primary: #{color(brand)};
+  --primary-foreground: #{color(brand-foreground)};
+}

@@ -1,0 +1,82 @@
+@use '@surstromming/design' as design;
+
+// App shell over semantic direct children — `header`, `nav`, `main`, `footer` —
+// so the app needs no wrapper elements (the same trick as design.layout()).
+// From md the nav is a rail running the full height with the header beside it —
+// design.layout()'s default, *not* its `$sidebarInset` shape, which is why the
+// wordmark sits at the top of the rail rather than in the header. The player
+// still spans both columns: its scrubber is the width of the app, not the page.
+// On a phone the same rail is a drawer, positioned outside the grid, so the
+// mobile shell is only header / main / player — the header's toggle is what
+// brings the nav in.
+// The shell is viewport-locked and `main` is the only scroller, so the header,
+// the nav and the player never scroll away.
+@mixin shell($selector: '#app') {
+  #{$selector} {
+    display: grid;
+    height: 100dvh;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'header'
+      'main'
+      'player';
+
+    // Installed on a phone there is no browser chrome left to keep the app off
+    // the notch and the home indicator, so the shell holds its own against
+    // them. The top inset is padding on the shell rather than on the header,
+    // because the body is already painted `background` — the header's own
+    // colour — so the strip above it needs nothing else to fill it; a rule on
+    // the header would have to restate the package's spacing(2) to add to it.
+    // In a browser tab every inset is 0 and none of this shows.
+    padding-block-start: env(safe-area-inset-top);
+
+    @include design.screen(md) {
+      grid-template-columns: auto 1fr;
+      grid-template-areas:
+        'nav header'
+        'nav main'
+        'player player';
+    }
+
+    // Header ships spacing(2) all round; the gutter has to line up with the
+    // page's instead. Set from here — the shell owns its gutters, and an
+    // element selector under the shell's own beats the package's one class
+    // without the app having to care which stylesheet loaded last.
+    > header {
+      grid-area: header;
+      padding-inline: design.spacing(3);
+
+      @include design.screen(md) {
+        padding-inline: design.spacing(6);
+      }
+    }
+
+    > main {
+      grid-area: main;
+      // Lets the scroller inside shrink instead of stretching the row.
+      min-height: 0;
+    }
+
+    // The bottom inset belongs to whatever is actually last, and that's the
+    // player whenever there is one — its own `sidebar` background then fills
+    // the indicator's strip instead of leaving a band of a different colour
+    // under it. With nothing playing the footer isn't rendered at all and the
+    // page is the last thing, so it takes the inset instead.
+    &:not(:has(> footer)) > main {
+      padding-block-end: env(safe-area-inset-bottom);
+    }
+
+    // Only from md — below it the nav is `position: fixed` and out of the grid,
+    // which is why the mobile template has no `nav` area to place it in.
+    > nav {
+      @include design.screen(md) {
+        grid-area: nav;
+      }
+    }
+
+    > footer {
+      grid-area: player;
+      padding-block-end: env(safe-area-inset-bottom);
+    }
+  }
+}
