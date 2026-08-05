@@ -1,21 +1,8 @@
+import { fetchProxied } from './proxy'
 import { token } from './session'
 
 export const API = 'https://api.music.yandex.net'
 export const OAUTH = 'https://oauth.yandex.ru'
-
-/**
- * Yandex Music refuses requests from outside CIS, so every host it owns — api,
- * oauth, avatars and the audio CDNs — is fetched through the proxy in CIS named
- * by `VITE_YM_PROXY`: a URL-prefix proxy, the whole destination appended to it.
- *
- * Unset, the request goes straight to Yandex, which is what a deployment inside
- * CIS wants.
- */
-const PROXY = import.meta.env.VITE_YM_PROXY
-
-const prefix = PROXY ? (PROXY.endsWith('/') ? PROXY : `${PROXY}/`) : ''
-
-export const withProxy = (url: string) => prefix + url
 
 export class ApiError extends Error {
   status: number
@@ -32,8 +19,13 @@ const headers = () => ({
   'Accept-Language': 'ru',
 })
 
+/**
+ * Yandex Music refuses requests from outside CIS, so every host it owns — api,
+ * oauth, avatars and the audio CDNs — goes through the proxy: `fetchProxied`
+ * takes the destination URL and prefixes it. See `proxy.ts`.
+ */
 async function send(url: string, init?: RequestInit) {
-  const response = await fetch(withProxy(url), {
+  const response = await fetchProxied(url, {
     ...init,
     headers: { ...headers(), ...init?.headers },
   })

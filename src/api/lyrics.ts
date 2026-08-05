@@ -1,4 +1,5 @@
-import { get, withProxy } from './client'
+import { get } from './client'
+import { fetchProxied } from './proxy'
 import { signLyrics } from './sign'
 
 export interface LyricLine {
@@ -36,7 +37,7 @@ export async function getLyrics(trackId: string, synced: boolean): Promise<Lyric
       timeStamp,
       sign,
     })
-    const text = await (await fetch(withProxy(downloadUrl))).text()
+    const text = await (await fetchProxied(downloadUrl)).text()
     return synced ? parseLrc(text) : text.split('\n').map((line) => ({ text: line }))
   } catch {
     return []

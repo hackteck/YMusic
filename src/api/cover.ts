@@ -1,4 +1,4 @@
-import { withProxy } from './client'
+import { withProxy } from './proxy'
 import type { Cover } from './types'
 
 /** Sizes Yandex actually renders; anything else falls back to the original. */

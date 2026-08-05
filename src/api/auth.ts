@@ -1,4 +1,5 @@
-import { OAUTH, withProxy } from './client'
+import { OAUTH } from './client'
+import { fetchProxied, withProxy } from './proxy'
 import { token } from './session'
 
 /** Public OAuth credentials of the official Yandex Music Android app. */
@@ -14,7 +15,7 @@ export interface DeviceCode {
 }
 
 const form = async <T>(path: string, body: Record<string, string>): Promise<T> => {
-  const response = await fetch(withProxy(OAUTH + path), {
+  const response = await fetchProxied(OAUTH + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(body),
@@ -51,7 +52,7 @@ export const pollForToken = (deviceCode: string) =>
  */
 export async function getAvatarUrl(): Promise<string> {
   try {
-    const response = await fetch(withProxy('https://login.yandex.ru/info?format=json'), {
+    const response = await fetchProxied('https://login.yandex.ru/info?format=json', {
       headers: { Authorization: `OAuth ${token.value}` },
     })
     if (!response.ok) return ''

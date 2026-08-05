@@ -13,10 +13,12 @@ The API protocol was reverse-engineered in `D:\Dev\yandex-music`; its
 
 Yandex Music rejects requests from outside CIS. All of it —
 `api.music.yandex.net`, `oauth.yandex.ru`, `avatars.yandex.net` (covers) and the
-`strm.yandex.net` audio CDNs — goes through the box in CIS, and the whole of
-that arrangement is one helper, `withProxy()` in `src/api/client.ts`: it
-prepends `VITE_YM_PROXY` to the destination URL — a **URL-prefix proxy**
-(`https://…/https://api.music…`). Unset, the URL is used as-is.
+`strm.yandex.net` audio CDNs — goes through the box in CIS, and all of that
+arrangement lives in `src/api/proxy.ts`: `withProxy()` prepends `VITE_YM_PROXY`
+to the destination URL — a **URL-prefix proxy** (`https://…/https://api.music…`)
+— and `fetchProxied()` is that plus the recovery below. Unset, the URL is used
+as-is. Nothing outside that module prefixes a URL itself, which is what lets the
+address change under a running app.
 
 It is doing **two** jobs, and they're worth keeping apart, because only one of
 them is about geography: it puts the request in CIS, *and* it answers with the
@@ -29,6 +31,52 @@ and a clone should build something that works. `.env.local` (gitignored) or a
 real environment variable overrides it — that's the order Vite's `loadEnv` reads
 them in — and it's inlined at **build** time, so a new address means a rebuild,
 not just an edit.
+
+### So a bundle outlives its address, and reads the new one off master
+
+The tunnel rotates (see `update-proxy.yml` below) and the address is baked into
+the bundle, so there is always a window where what's running points at a hostname
+nothing is listening on: between the rotation and the deploy finishing, and for
+however long a browser — or an installed PWA, whose shell is precached — keeps
+serving the old build. In that window *nothing* works, not just one request: no
+API, no covers, no audio.
+
+The rotation writes master's `.env` before it does anything else, so that file is
+always at least as current as any build, and it's plain text on
+`raw.githubusercontent.com` with `access-control-allow-origin: *` — a page can
+just read it. So `fetchProxied()` catches the failure and repairs itself: it
+re-reads that file, adopts the address it names, and retries the request once.
+
+The parts of that worth not re-deriving:
+
+- **A dead quick tunnel is not a status code the app gets to read.** Cloudflare
+  answers 530 (its error 1033) with no CORS headers of its own, and once the
+  hostname stops resolving there's nothing at all — either way `fetch` *rejects*.
+  So a rejection is the signal, and the 502/503/530 Cloudflare serves while a
+  fresh tunnel registers is treated as one too (the same statuses
+  `update-proxy.yml` retries past).
+- **Retrying is safe on any method, POSTs included**, because both of those
+  branches mean the request never reached Yandex: the proxy is the thing that
+  answers with CORS headers at all, so if it answered it forwarded, and a 530 is
+  Cloudflare with nowhere to forward to.
+- **It's a repair, not a probe.** Nothing is checked up front — a healthy launch
+  pays nothing, and the cost only lands on the launch that was already broken.
+  One read of the file per page load however many requests failed at once, and
+  whether or not it worked: an address doesn't come back to life by itself, so a
+  second read has nothing to add and a reload is the retry.
+- **The recovered address is remembered, but only against the build it stood in
+  for** — stored with the `VITE_YM_PROXY` it replaced. A later deploy carries a
+  fresh one, which is newer than anything in localStorage and wins; without that
+  comparison a recovered address would outlive its own rotation and every launch
+  would start by failing.
+- **`withProxy()` stays synchronous**, because `<img src>` (covers, the avatar)
+  needs a URL and not a promise. It reads a mutable prefix, so the repair reaches
+  everything built after it — which is every cover, since covers come from the
+  API response whose request is what triggers the repair.
+- **Nothing configured is left alone.** Unset means "talk to Yandex directly", a
+  deliberate choice inside CIS, not an address to go and fix.
+- What this can't fix is a tunnel that rotated *without* the workflow, since then
+  master's `.env` is stale too, and a client that can't reach GitHub either.
 
 **The proxy has to be https**, and that is the whole reason this shape works.
 `crypto.subtle` signs every `get-file-info` and needs a secure context, so the

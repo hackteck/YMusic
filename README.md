@@ -66,6 +66,14 @@ ships, and a clone should build something that works. Override it in
 `.env.local` (gitignored) or with a real environment variable. **It's inlined at
 build time**, so changing it means a rebuild, not just an edit.
 
+Which is why the app has a way back when that address dies — the reference
+deployment is on a rotating tunnel, and a bundle outlives its hostname. When a
+request through the proxy can't be reached at all, `fetchProxied()` in
+[src/api/proxy.ts](src/api/proxy.ts) re-reads `VITE_YM_PROXY` out of **master's
+committed `.env`**, adopts it and retries once. Nothing is probed up front, so a
+healthy launch pays nothing for it. If you're running your own fork, that's the
+URL to change at the top of that file.
+
 Installing the PWA changes none of this. A PWA is the same document in the same
 browser engine under the same origin: requests still leave from the user's IP,
 and a service worker's `fetch` obeys CORS exactly as the page's does.
@@ -192,7 +200,8 @@ enable it if you're on a quick tunnel too. Needs:
 - `VDSINA_HOST` / `VDSINA_USER` — optional, override the defaults in the file
 
 If your proxy has a stable hostname, delete this workflow and set
-`VITE_YM_PROXY` once.
+`VITE_YM_PROXY` once — the runtime fallback then never has anything to do, since
+`.env` on master and the build agree.
 
 ---
 

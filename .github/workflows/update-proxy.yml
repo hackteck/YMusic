@@ -6,6 +6,12 @@ name: Rotate proxy tunnel
 # `VITE_YM_PROXY` is inlined at build time, not read at runtime — the deploy
 # workflow is dispatched afterwards. An edit without a rebuild ships nothing.
 #
+# The commit is not *quite* inert on its own, mind: a client whose built-in
+# address has stopped answering re-reads this file off master and adopts what it
+# finds (see "So a bundle outlives its address" in CLAUDE.md), which is what
+# covers the window before the deploy lands. Committing first, deploying second,
+# is therefore the right order — but it is a repair, not the delivery mechanism.
+#
 # Midnight **Moscow** (21:00 UTC), the quietest hour for a CIS-only app; use
 # `0 0 * * *` for midnight UTC instead. GitHub runs scheduled workflows late
 # under load — sometimes by an hour — so treat the time as "overnight", not as
