@@ -17,8 +17,8 @@ name: Rotate proxy tunnel
 # under load — sometimes by an hour — so treat the time as "overnight", not as
 # an appointment.
 on:
-    schedule:
-      - cron: '0 0 * * *'
+    # schedule:
+    #   - cron: '0 0 * * *'
     workflow_dispatch:
 
 permissions:
